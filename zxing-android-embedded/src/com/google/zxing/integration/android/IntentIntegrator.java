@@ -22,8 +22,6 @@ import android.app.Fragment;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
-import android.view.Display;
-import android.view.WindowManager;
 
 import com.google.zxing.client.android.Intents;
 import com.journeyapps.barcodescanner.CaptureActivity;
@@ -63,7 +61,7 @@ public class IntentIntegrator {
     private android.app.Fragment fragment;
     private android.support.v4.app.Fragment supportFragment;
 
-    private final Map<String, Object> moreExtras = new HashMap<String, Object>(3);
+    private final Map<String, Object> moreExtras = new HashMap<>(3);
 
     private Collection<String> desiredBarcodeFormats;
 
@@ -176,6 +174,17 @@ public class IntentIntegrator {
     }
 
     /**
+     * Set to true to enable saving the barcode image and sending its path in the result Intent.
+     *
+     * @param enabled true to enable barcode image
+     * @return this
+     */
+    public IntentIntegrator setBarcodeImageEnabled(boolean enabled) {
+        addExtra(Intents.Scan.BARCODE_IMAGE_ENABLED, enabled);
+        return this;
+    }
+
+    /**
      * Set the desired barcode formats to scan.
      *
      * @param desiredBarcodeFormats names of {@code BarcodeFormat}s to scan for
@@ -191,6 +200,16 @@ public class IntentIntegrator {
      */
     public final void initiateScan() {
         startActivityForResult(createScanIntent(), REQUEST_CODE);
+    }
+
+    /**
+     * Initiates a scan for all known barcode types with the default camera.
+     * And starts a timer to finish on timeout
+     * @return Activity.RESULT_CANCELED and true on parameter TIMEOUT.
+     */
+    public IntentIntegrator setTimeout(long timeout) {
+        addExtra(Intents.Scan.TIMEOUT, timeout);
+        return this;
     }
 
     /**
@@ -254,7 +273,6 @@ public class IntentIntegrator {
         }
     }
 
-
     protected void startActivity(Intent intent) {
         if (fragment != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
@@ -287,11 +305,13 @@ public class IntentIntegrator {
                 int intentOrientation = intent.getIntExtra(Intents.Scan.RESULT_ORIENTATION, Integer.MIN_VALUE);
                 Integer orientation = intentOrientation == Integer.MIN_VALUE ? null : intentOrientation;
                 String errorCorrectionLevel = intent.getStringExtra(Intents.Scan.RESULT_ERROR_CORRECTION_LEVEL);
+                String barcodeImagePath = intent.getStringExtra(Intents.Scan.RESULT_BARCODE_IMAGE_PATH);
                 return new IntentResult(contents,
                         formatName,
                         rawBytes,
                         orientation,
-                        errorCorrectionLevel);
+                        errorCorrectionLevel,
+                        barcodeImagePath);
             }
             return new IntentResult();
         }
@@ -324,5 +344,4 @@ public class IntentIntegrator {
             }
         }
     }
-
 }

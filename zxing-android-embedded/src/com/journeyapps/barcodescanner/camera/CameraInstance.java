@@ -7,29 +7,49 @@ import android.view.SurfaceHolder;
 
 import com.google.zxing.client.android.R;
 import com.journeyapps.barcodescanner.Size;
-import com.journeyapps.barcodescanner.SourceData;
 import com.journeyapps.barcodescanner.Util;
 
 /**
+ * Manage a camera instance using a background thread.
  *
+ * All methods must be called from the main thread.
  */
 public class CameraInstance {
     private static final String TAG = CameraInstance.class.getSimpleName();
 
     private CameraThread cameraThread;
-    private SurfaceHolder surfaceHolder;
+    private CameraSurface surface;
+
     private CameraManager cameraManager;
     private Handler readyHandler;
     private DisplayConfiguration displayConfiguration;
     private boolean open = false;
     private CameraSettings cameraSettings = new CameraSettings();
 
+    /**
+     * Construct a new CameraInstance.
+     *
+     * A new CameraManager is created.
+     *
+     * @param context the Android Context
+     */
     public CameraInstance(Context context) {
         Util.validateMainThread();
 
         this.cameraThread = CameraThread.getInstance();
         this.cameraManager = new CameraManager(context);
         this.cameraManager.setCameraSettings(cameraSettings);
+    }
+
+    /**
+     * Construct a new CameraInstance with a specific CameraManager.
+     *
+     * @param cameraManager the CameraManager to use
+     */
+    public CameraInstance(CameraManager cameraManager) {
+        Util.validateMainThread();
+
+        this.cameraManager = cameraManager;
     }
 
     public void setDisplayConfiguration(DisplayConfiguration configuration) {
@@ -46,7 +66,11 @@ public class CameraInstance {
     }
 
     public void setSurfaceHolder(SurfaceHolder surfaceHolder) {
-        this.surfaceHolder = surfaceHolder;
+        setSurface(new CameraSurface(surfaceHolder));
+    }
+
+    public void setSurface(CameraSurface surface) {
+        this.surface = surface;
     }
 
     public CameraSettings getCameraSettings() {
@@ -149,7 +173,6 @@ public class CameraInstance {
         }
     }
 
-
     private Runnable opener = new Runnable() {
         @Override
         public void run() {
@@ -184,7 +207,7 @@ public class CameraInstance {
         public void run() {
             try {
                 Log.d(TAG, "Starting preview");
-                cameraManager.setPreviewDisplay(surfaceHolder);
+                cameraManager.setPreviewDisplay(surface);
                 cameraManager.startPreview();
             } catch (Exception e) {
                 notifyError(e);
@@ -212,5 +235,32 @@ public class CameraInstance {
         if (readyHandler != null) {
             readyHandler.obtainMessage(R.id.zxing_camera_error, error).sendToTarget();
         }
+    }
+
+    /**
+     * Returns the CameraManager used to control the camera.
+     *
+     * The CameraManager is not thread-safe, and must only be used from the CameraThread.
+     *
+     * @return the CameraManager used
+     */
+    protected CameraManager getCameraManager() {
+        return cameraManager;
+    }
+
+    /**
+     *
+     * @return the CameraThread used to manage the camera
+     */
+    protected CameraThread getCameraThread() {
+        return cameraThread;
+    }
+
+    /**
+     *
+     * @return the surface om which the preview is displayed
+     */
+    protected CameraSurface getSurface() {
+        return surface;
     }
 }

@@ -20,7 +20,6 @@ class CameraThread {
         return instance;
     }
 
-
     private Handler handler;
     private HandlerThread thread;
 
@@ -33,13 +32,35 @@ class CameraThread {
     }
 
     /**
-     * Call from main thread.
+     * Call from main thread or camera thread.
      *
      * Enqueues a task on the camera thread.
      *
      * @param runnable the task to enqueue
      */
     protected void enqueue(Runnable runnable) {
+        synchronized (LOCK) {
+            checkRunning();
+            this.handler.post(runnable);
+        }
+    }
+
+    /**
+     * Call from main thread or camera thread.
+     *
+     * Enqueues a task on the camera thread.
+     *
+     * @param runnable the task to enqueue
+     * @param delayMillis the delay in milliseconds before executing the runnable
+     */
+    protected void enqueueDelayed(Runnable runnable, long delayMillis) {
+        synchronized (LOCK) {
+            checkRunning();
+            this.handler.postDelayed(runnable, delayMillis);
+        }
+    }
+
+    private void checkRunning() {
         synchronized (LOCK) {
             if (this.handler == null) {
                 if (openCount <= 0) {
@@ -49,7 +70,6 @@ class CameraThread {
                 this.thread.start();
                 this.handler = new Handler(thread.getLooper());
             }
-            this.handler.post(runnable);
         }
     }
 
@@ -79,7 +99,7 @@ class CameraThread {
     /**
      * Call from main thread.
      *
-     * @param runner
+     * @param runner The {@link Runnable} to be enqueued
      */
     protected void incrementAndEnqueue(Runnable runner) {
         synchronized (LOCK) {

@@ -2,6 +2,7 @@ package com.journeyapps.barcodescanner;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.view.KeyEvent;
 
 import com.google.zxing.client.android.R;
@@ -11,18 +12,27 @@ import com.google.zxing.client.android.R;
  */
 public class CaptureActivity extends Activity {
     private CaptureManager capture;
-    private CompoundBarcodeView barcodeScannerView;
+    private DecoratedBarcodeView barcodeScannerView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        setContentView(R.layout.zxing_capture);
-        barcodeScannerView = (CompoundBarcodeView)findViewById(R.id.zxing_barcode_scanner);
+        barcodeScannerView = initializeContent();
 
         capture = new CaptureManager(this, barcodeScannerView);
         capture.initializeFromIntent(getIntent(), savedInstanceState);
         capture.decode();
+    }
+
+    /**
+     * Override to use a different layout.
+     *
+     * @return the DecoratedBarcodeView
+     */
+    protected DecoratedBarcodeView initializeContent() {
+        setContentView(R.layout.zxing_capture);
+        return (DecoratedBarcodeView)findViewById(R.id.zxing_barcode_scanner);
     }
 
     @Override
@@ -47,6 +57,11 @@ public class CaptureActivity extends Activity {
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         capture.onSaveInstanceState(outState);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String permissions[], @NonNull int[] grantResults) {
+        capture.onRequestPermissionsResult(requestCode, permissions, grantResults);
     }
 
     @Override

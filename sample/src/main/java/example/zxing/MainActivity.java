@@ -54,7 +54,20 @@ public class MainActivity extends ActionBarActivity {
     }
 
     public void scanCustomScanner(View view) {
-        new IntentIntegrator(this).setCaptureActivity(CustomScannerActivity.class).initiateScan();
+        new IntentIntegrator(this).setOrientationLocked(false).setCaptureActivity(CustomScannerActivity.class).initiateScan();
+    }
+
+    public void scanMarginScanner(View view) {
+        IntentIntegrator integrator = new IntentIntegrator(this);
+        integrator.setOrientationLocked(false);
+        integrator.setCaptureActivity(SmallCaptureActivity.class);
+        integrator.initiateScan();
+    }
+
+    public void scanWithTimeout(View view) {
+        IntentIntegrator integrator = new IntentIntegrator(this);
+        integrator.setTimeout(8000);
+        integrator.initiateScan();
     }
 
     @Override
@@ -69,12 +82,10 @@ public class MainActivity extends ActionBarActivity {
                 Toast.makeText(this, "Scanned: " + result.getContents(), Toast.LENGTH_LONG).show();
             }
         } else {
-            Log.d("MainActivity", "Weird");
             // This is important, otherwise the result will not be passed to the fragment
             super.onActivityResult(requestCode, resultCode, data);
         }
     }
-
 
     /**
      * Sample of scanning from a Fragment

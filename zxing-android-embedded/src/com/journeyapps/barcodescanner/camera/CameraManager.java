@@ -19,8 +19,6 @@ package com.journeyapps.barcodescanner.camera;
 import android.content.Context;
 import android.hardware.Camera;
 import android.os.Build;
-import android.os.Handler;
-import android.os.Message;
 import android.util.Log;
 import android.view.Surface;
 import android.view.SurfaceHolder;
@@ -36,6 +34,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
+ * Wrapper to manage the Camera. This is not thread-safe, and the methods must always be called
+ * from the same thread.
+ *
+ *
  * Call order:
  *
  * 1. setCameraSettings()
@@ -136,6 +138,9 @@ public final class CameraManager {
      * Must be called from camera thread.
      */
     public void configure() {
+        if(camera == null) {
+            throw new RuntimeException("Camera not open");
+        }
         setParameters();
     }
 
@@ -143,7 +148,11 @@ public final class CameraManager {
      * Must be called from camera thread.
      */
     public void setPreviewDisplay(SurfaceHolder holder) throws IOException {
-        camera.setPreviewDisplay(holder);
+        setPreviewDisplay(new CameraSurface(holder));
+    }
+
+    public void setPreviewDisplay(CameraSurface surface) throws IOException {
+        surface.setPreview(camera);
     }
 
     /**
@@ -183,7 +192,6 @@ public final class CameraManager {
         }
     }
 
-
     /**
      * Closes the camera driver if still in use.
      *
@@ -215,7 +223,6 @@ public final class CameraManager {
         return rotationDegrees;
     }
 
-
     private Camera.Parameters getDefaultCameraParameters() {
         Camera.Parameters parameters = camera.getParameters();
         if (defaultParameters == null) {
@@ -241,8 +248,7 @@ public final class CameraManager {
             Log.w(TAG, "In camera config safe mode -- most settings will not be honored");
         }
 
-
-        CameraConfigurationUtils.setFocus(parameters, settings.isAutoFocusEnabled(), !settings.isContinuousFocusEnabled(), safeMode);
+        CameraConfigurationUtils.setFocus(parameters, settings.getFocusMode(), safeMode);
 
         if (!safeMode) {
             CameraConfigurationUtils.setTorch(parameters, false);
@@ -272,6 +278,12 @@ public final class CameraManager {
             requestedPreviewSize = displayConfiguration.getBestPreviewSize(previewSizes, isCameraRotated());
 
             parameters.setPreviewSize(requestedPreviewSize.width, requestedPreviewSize.height);
+        }
+
+        if (Build.DEVICE.equals("glass-1")) {
+            // We need to set the FPS on Google Glass devices, otherwise the preview is scrambled.
+            // FIXME - can/should we do this for other devices as well?
+            CameraConfigurationUtils.setBestPreviewFPS(parameters);
         }
 
         Log.i(TAG, "Final camera parameters: " + parameters.flatten());
@@ -330,7 +342,6 @@ public final class CameraManager {
         camera.setDisplayOrientation(rotation);
     }
 
-
     private void setParameters() {
         try {
             this.rotationDegrees = calculateDisplayRotation();
@@ -343,7 +354,7 @@ public final class CameraManager {
         } catch (Exception e) {
             // Failed, use safe mode
             try {
-                setDesiredParameters(false);
+                setDesiredParameters(true);
             } catch (Exception e2) {
                 // Well, darn. Give up
                 Log.w(TAG, "Camera rejected even safe-mode parameters! No configuration");
@@ -359,7 +370,10 @@ public final class CameraManager {
         cameraPreviewCallback.setResolution(previewSize);
     }
 
-
+    /**
+     * This returns false if the camera is not opened yet, failed to open, or has
+     * been closed.
+     */
     public boolean isOpen() {
         return camera != null;
     }
@@ -452,5 +466,15 @@ public final class CameraManager {
         } else {
             return false;
         }
+    }
+
+    /**
+     * Returns the Camera. This returns null if the camera is not opened yet, failed to open, or has
+     * been closed.
+     *
+     * @return the Camera
+     */
+    public Camera getCamera() {
+        return camera;
     }
 }

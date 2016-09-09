@@ -1,13 +1,20 @@
 package com.journeyapps.barcodescanner;
 
+import android.Manifest;
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.view.Display;
 import android.view.Surface;
@@ -21,6 +28,9 @@ import com.google.zxing.client.android.InactivityTimer;
 import com.google.zxing.client.android.Intents;
 import com.google.zxing.client.android.R;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
@@ -43,10 +53,13 @@ import java.util.Map;
 public class CaptureManager {
     private static final String TAG = CaptureManager.class.getSimpleName();
 
+    private static int cameraPermissionReqCode = 250;
+
     private Activity activity;
-    private CompoundBarcodeView barcodeView;
+    private DecoratedBarcodeView barcodeView;
     private int orientationLock = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
     private static final String SAVED_ORIENTATION_LOCK = "SAVED_ORIENTATION_LOCK";
+    private boolean returnBarcodeImagePath = false;
 
     private boolean destroyed = false;
 
@@ -102,7 +115,7 @@ public class CaptureManager {
         }
     };
 
-    public CaptureManager(Activity activity, CompoundBarcodeView barcodeView) {
+    public CaptureManager(Activity activity, DecoratedBarcodeView barcodeView) {
         this.activity = activity;
         this.barcodeView = barcodeView;
         barcodeView.getBarcodeView().addStateListener(stateListener);
@@ -155,6 +168,20 @@ public class CaptureManager {
                 beepManager.setBeepEnabled(false);
                 beepManager.updatePrefs();
             }
+
+            if (intent.hasExtra(Intents.Scan.TIMEOUT)) {
+                Runnable runnable = new Runnable() {
+                    @Override
+                    public void run() {
+                        returnResultTimeout();
+                    }
+                };
+                handler.postDelayed(runnable, intent.getLongExtra(Intents.Scan.TIMEOUT, 0L));
+            }
+
+            if (intent.getBooleanExtra(Intents.Scan.BARCODE_IMAGE_ENABLED, false)) {
+                returnBarcodeImagePath = true;
+            }
         }
     }
 
@@ -200,9 +227,50 @@ public class CaptureManager {
      * Call from Activity#onResume().
      */
     public void onResume() {
-        barcodeView.resume();
+        if(Build.VERSION.SDK_INT >= 23) {
+            openCameraWithPermission();
+        } else {
+            barcodeView.resume();
+        }
         beepManager.updatePrefs();
         inactivityTimer.start();
+    }
+
+    private boolean askedPermission = false;
+
+    @TargetApi(23)
+    private void openCameraWithPermission() {
+        if (ContextCompat.checkSelfPermission(this.activity, Manifest.permission.CAMERA)
+                == PackageManager.PERMISSION_GRANTED) {
+            barcodeView.resume();
+        } else if(!askedPermission) {
+            ActivityCompat.requestPermissions(this.activity,
+                    new String[]{Manifest.permission.CAMERA},
+                    cameraPermissionReqCode);
+            askedPermission = true;
+        } else {
+            // Wait for permission result
+        }
+    }
+
+    /**
+     * Call from Activity#onRequestPermissionsResult
+     * @param requestCode The request code passed in {@link android.support.v4.app.ActivityCompat#requestPermissions(Activity, String[], int)}.
+     * @param permissions The requested permissions.
+     * @param grantResults The grant results for the corresponding permissions
+     *     which is either {@link android.content.pm.PackageManager#PERMISSION_GRANTED}
+     *     or {@link android.content.pm.PackageManager#PERMISSION_DENIED}. Never null.
+     */
+    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
+        if(requestCode == cameraPermissionReqCode) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // permission was granted
+                barcodeView.resume();
+            } else {
+                // TODO: display better error message.
+                displayFrameworkBugMessageAndExit();
+            }
+        }
     }
 
     /**
@@ -230,14 +298,14 @@ public class CaptureManager {
         outState.putInt(SAVED_ORIENTATION_LOCK, this.orientationLock);
     }
 
-
     /**
      * Create a intent to return as the Activity result.
      *
      * @param rawResult the BarcodeResult, must not be null.
+     * @param barcodeImagePath a path to an exported file of the Barcode Image, can be null.
      * @return the Intent
      */
-    public static Intent resultIntent(BarcodeResult rawResult) {
+    public static Intent resultIntent(BarcodeResult rawResult, String barcodeImagePath) {
         Intent intent = new Intent(Intents.Scan.ACTION);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET);
         intent.putExtra(Intents.Scan.RESULT, rawResult.toString());
@@ -270,16 +338,49 @@ public class CaptureManager {
                 }
             }
         }
+        if (barcodeImagePath != null) {
+            intent.putExtra(Intents.Scan.RESULT_BARCODE_IMAGE_PATH, barcodeImagePath);
+        }
         return intent;
+    }
+
+    /**
+     * Save the barcode image to a temporary file stored in the application's cache, and return its path.
+     * Only does so if returnBarcodeImagePath is enabled.
+     *
+     * @param rawResult the BarcodeResult, must not be null
+     * @return the path or null
+     */
+    private String getBarcodeImagePath(BarcodeResult rawResult) {
+        String barcodeImagePath = null;
+        if (returnBarcodeImagePath) {
+            Bitmap bmp = rawResult.getBitmap();
+            try {
+                File bitmapFile = File.createTempFile("barcodeimage", ".jpg", activity.getCacheDir());
+                FileOutputStream outputStream = new FileOutputStream(bitmapFile);
+                bmp.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
+                outputStream.close();
+                barcodeImagePath = bitmapFile.getAbsolutePath();
+            } catch (IOException e) {
+                Log.w(TAG, "Unable to create temporary file and store bitmap! " + e);
+            }
+        }
+        return barcodeImagePath;
     }
 
     private void finish() {
         activity.finish();
     }
 
+    protected void returnResultTimeout() {
+        Intent intent = new Intent(Intents.Scan.ACTION);
+        intent.putExtra(Intents.Scan.TIMEOUT, true);
+        activity.setResult(Activity.RESULT_CANCELED, intent);
+        finish();
+    }
 
     protected void returnResult(BarcodeResult rawResult) {
-        Intent intent = resultIntent(rawResult);
+        Intent intent = resultIntent(rawResult, getBarcodeImagePath(rawResult));
         activity.setResult(Activity.RESULT_OK, intent);
         finish();
     }
@@ -306,5 +407,11 @@ public class CaptureManager {
         builder.show();
     }
 
+    public static int getCameraPermissionReqCode() {
+        return cameraPermissionReqCode;
+    }
 
+    public static void setCameraPermissionReqCode(int cameraPermissionReqCode) {
+        CaptureManager.cameraPermissionReqCode = cameraPermissionReqCode;
+    }
 }
